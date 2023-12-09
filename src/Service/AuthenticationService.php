@@ -42,40 +42,61 @@ class AuthenticationService
     public function checkAuthentication(string $env): string|null
     {
         $sessionId = null;
-        $tunnel = $this->tunnelInformation->findOneBy([
-            'type' => $env,
-            'isActive' => true,
-            'removedAt' => null,
-        ]);
-        if (!is_null($tunnel)) {
-            $checkSession = $this->sessionRepository->findOneBy([
-                'tunnelType' => $env,
-                'closedAt' => null,
+        try {
+            $tunnel = $this->tunnelInformation->findOneBy([
+                'type' => $env,
+                'isActive' => true,
+                'removedAt' => null,
             ]);
-            if (!is_null($checkSession)) {
-                $sessionId = $checkSession->getSessionIdentification();
-                $balance = $this->balance($env, $sessionId, $tunnel, true);
-                if (is_null($balance)) {
-                    $sessionId = null;
+            if (!is_null($tunnel)) {
+                $checkSession = $this->sessionRepository->findOneBy([
+                    'tunnelType' => $env,
+                    'closedAt' => null,
+                ]);
+                if (!is_null($checkSession)) {
+                    $sessionId = $checkSession->getSessionIdentification();
+                    $balance = $this->balance($env, $sessionId, $tunnel, true);
+                    if (is_null($balance)) {
+                        $sessionId = null;
+                    }
+                }
+                if (is_null($sessionId)) {
+                    $sessionId = $this->authenticated($env, $tunnel);
                 }
             }
-            if (is_null($sessionId)) {
-                $sessionId = $this->authenticated($env, $tunnel);
-            }
+            $this->logger->info(
+                sprintf(
+                    "action=Authentication, SessionId=%s",
+                    $sessionId
+                )
+            );
+        } catch (Exception $ex) {
+            $this->logger->error(
+                sprintf(
+                    "action=Authentication, type=%s, Message=%s",
+                    "Exception",
+                    $ex->getMessage()
+                )
+            );
         }
 
         return $sessionId;
     }
 
-    public function balance(string $env, string $sessionId, TunnelInformation $tunnel, bool $persist = false): float | null {
+    public function balance(
+        string $env,
+        string $sessionId,
+        TunnelInformation $tunnel,
+        bool $persist = false
+    ): float|null {
         $soapClient = new ClientSoap($tunnel->getTunnelUrl()."/VirtualPayment/SalesService.svc?wsdl");
 
         $args = [
             'GetBalanceRequest' => [
                 'SessionTicket' => [
-                    'Ticket' => $sessionId
-                ]
-            ]
+                    'Ticket' => $sessionId,
+                ],
+            ],
         ];
 
         $response = $soapClient->__call('GetBalance', $args);
@@ -83,7 +104,7 @@ class AuthenticationService
         if ($persist) {
             $session = $this->sessionRepository->findOneBy([
                 'sessionIdentification' => $sessionId,
-                'tunnelType' => $env
+                'tunnelType' => $env,
             ]);
             if (!is_null($session)) {
                 if ($response->Result->ValueOk) {
@@ -92,8 +113,16 @@ class AuthenticationService
                     $session->setClosedAt(new \DateTimeImmutable('now'));
                 }
                 $this->em->flush();
+                $this->logger->info(
+                    sprintf(
+                        "action=Balance, SessionId=%s, Balance=%d",
+                        $sessionId,
+                        $balance
+                    )
+                );
             }
         }
+
         return $balance;
     }
 
@@ -103,27 +132,42 @@ class AuthenticationService
         $checkSession = new ConnectionSession();
         $checkSession->setTunnelType($env);
 
-        $soapClient = new ClientSoap($tunnel->getTunnelUrl()."/VirtualPayment/AuthenticationService.svc?wsdl");
+        try {
+            $soapClient = new ClientSoap($tunnel->getTunnelUrl()."/VirtualPayment/AuthenticationService.svc?wsdl");
 
-        $args = [
-            'GetSessionTicketRequest' => [
-                'AccountId' => $this->parameters->get('app.'.strtolower($env).'.AccountId'),
-                'Password' => $this->parameters->get('app.'.strtolower($env).'.Password'),
-            ],
-        ];
+            $args = [
+                'GetSessionTicketRequest' => [
+                    'AccountId' => $this->parameters->get('app.'.strtolower($env).'.AccountId'),
+                    'Password' => $this->parameters->get('app.'.strtolower($env).'.Password'),
+                ],
+            ];
 
-        $response = $soapClient->__call('GetSessionTicket', $args);
-        if ($response->Result->ValueOk) {
-            $sessionTicket = $response->SessionTicket->Ticket;
-            $checkSession->setSessionIdentification($sessionTicket);
-            $balance = $this->balance($env, $sessionTicket, $tunnel);
-            $checkSession->setBalance($balance);
-
-
-            $this->em->persist($checkSession);
-            $this->em->flush();
+            $response = $soapClient->__call('GetSessionTicket', $args);
+            if ($response->Result->ValueOk) {
+                $sessionTicket = $response->SessionTicket->Ticket;
+                $checkSession->setSessionIdentification($sessionTicket);
+                $balance = $this->balance($env, $sessionTicket, $tunnel);
+                $checkSession->setBalance($balance);
 
 
+                $this->em->persist($checkSession);
+                $this->em->flush();
+
+                $this->logger->info(
+                    sprintf(
+                        "action=AuthenticatedSave, SessionId=%s",
+                        $sessionTicket
+                    )
+                );
+            }
+        } catch (Exception $ex) {
+            $this->logger->error(
+                sprintf(
+                    "action=Authenticated, type=%s, Message=%s",
+                    "Exception",
+                    $ex->getMessage()
+                )
+            );
         }
 
         return $sessionTicket;

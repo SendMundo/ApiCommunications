@@ -91,7 +91,24 @@ class SaleService extends CommonService
                     )
                 );
                 $this->em->flush();
+                $this->logger->info(
+                    sprintf(
+                        "action=SaleRecharge, Phone=%s, OrderId: %s, TransactionId: %s",
+                        $input->getPhoneNumber(),
+                        $response->OrderId,
+                        $input->getTransactionId()
+                    )
+                );
             } else {
+                $this->logger->error(
+                    sprintf(
+                        "action=SaleRecharge, type=%s, Message=%s",
+                        "Exception",
+                        $response?->Result?->Message
+                    )
+                    ,
+                    ['error' => $response]
+                );
                 throw new \RuntimeException($response->Result->Message, 422);
             }
         }
@@ -137,7 +154,7 @@ class SaleService extends CommonService
                             'PickUpAirport' => $input->getClient()?->getIsAirport() ? 'S' : null,
                             'Nationality' => $input->getClient()?->getNationality(),
                         ],
-                        'PhoneNumber' => $input->getPhoneNumber()
+                        'PhoneNumber' => $input->getPhoneNumber(),
                     ],
                     'SessionTicket' => [
                         'Ticket' => $tokenId,
@@ -163,6 +180,15 @@ class SaleService extends CommonService
                         $response->Result->Message,
                         $response->Result->RequestTime,
                         $response->Result->ResponseTime
+                    )
+                );
+
+                $this->logger->info(
+                    sprintf(
+                        "action=SalePackage, PackageId: %s, OrderId: %s, TransactionId: %s",
+                        $input->getPackageInfo()?->getId(),
+                        $response->OrderId,
+                        $input->getTransactionId()
                     )
                 );
 
@@ -200,9 +226,26 @@ class SaleService extends CommonService
 
                 $this->em->persist($currentOperation);
                 $this->em->flush();
+                $this->logger->info(
+                    sprintf(
+                        "action=SalePackage, Id: %s, OrderID: %s",
+                        $currentOperation->getId(),
+                        $response->OrderId
+                    )
+                );
             } else {
                 $exc = new CustomException($response->Result->Message);
                 $exc->setCustomData($response);
+
+                $this->logger->critical(
+                    sprintf(
+                        "action=SalePackage, type=%s, Message: %s, OrderId: %s",
+                        "Exception",
+                        $response->Result->Message,
+                        $response->OrderId
+                    ),
+                    $response
+                );
 
                 throw $exc;
             }
@@ -260,13 +303,23 @@ class SaleService extends CommonService
                         $response->Sale?->Package?->Enabled,
                     )
                 );
+                $this->logger->info(
+                    sprintf(
+                        "action=GetInfoSale, OrderId=%s, TransactionId=%s",
+                        $input->getOrderId(),
+                        $input->getTransactionId()
+                    )
+                );
             } else {
                 $exc = new CustomException($response->Result->Message);
                 $exc->setCustomData($response);
 
+                $this->logger->error($response->Result->Message);
+
                 throw $exc;
             }
         }
+
         return $out;
     }
 }
