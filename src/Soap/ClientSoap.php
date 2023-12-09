@@ -8,10 +8,6 @@ class ClientSoap extends \SoapClient
     {
         if ($options === null) {
             $options = [
-                'proxy_host' => '127.0.0.1',
-                'proxy_port' => 3443,
-                'proxy_login' => null,
-                'proxy_password' => null,
                 'connection_timeout' => 300,
                 'stream_context' => stream_context_create([
                     'ssl' => [
@@ -22,10 +18,6 @@ class ClientSoap extends \SoapClient
             ];
         } else {
             $options = array_merge_recursive($options, [
-                'proxy_host' => '127.0.0.1',
-                'proxy_port' => 3443,
-                'proxy_login' => null,
-                'proxy_password' => null,
                 'connection_timeout' => 300,
                 'stream_context' => stream_context_create([
                     'ssl' => [
