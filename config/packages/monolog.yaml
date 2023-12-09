@@ -1,4 +1,20 @@
 monolog:
+    handlers:
+        main:
+            max_files: 10
+            type: rotating_file
+            path: '%kernel.logs_dir%/rot.error.%kernel.environment%.log'
+            level: error
+        filter_for_errors:
+            type: fingers_crossed
+            action_level: error
+            handler: file_log
+        file_log:
+            type: stream
+            path: "%kernel.logs_dir%/error.%kernel.environment%.log"
+        syslog_handler:
+            type: syslog
+            level: error
     channels:
         - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
 
